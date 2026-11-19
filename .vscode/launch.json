@@ -1,0 +1,23 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node-terminal",
+      "request": "launch",
+      "name": "Debug: preview-operations.ts",
+      "command": "npx tsx scripts/preview-operations.ts"
+    },
+    {
+      "type": "node-terminal",
+      "request": "launch",
+      "name": "Debug: preview-schemas.ts",
+      "command": "npx tsx scripts/preview-schemas.ts"
+    },
+    {
+      "type": "node-terminal",
+      "request": "launch",
+      "name": "Debug Current File (tsx)",
+      "command": "npx tsx ${relativeFile}"
+    }
+  ]
+}
