@@ -1,19 +1,10 @@
-import { readFileSync, writeFileSync } from "node:fs";
-import { chunkOperations } from "../src/chunker/operations.ts";
-import { chunkSchemas } from "../src/chunker/schemas.ts";
-import { chunkConcepts } from "../src/chunker/concepts.ts";
-import { chunkUseCases } from "../src/chunker/usecases.ts";
-import { chunkDocs } from "../src/chunker/docs.ts";
+import { writeFileSync } from "node:fs";
+import { buildAllChunks } from "../src/chunker/index.ts";
+import { loadKnowledge } from "../src/knowledge/load.ts";
 
-const knowledge = JSON.parse(readFileSync(new URL("../knowledge.json", import.meta.url), "utf-8"));
+const knowledge = loadKnowledge();
 
-const chunks = [
-  ...chunkOperations(knowledge),
-  ...chunkSchemas(knowledge),
-  ...chunkConcepts(knowledge),
-  ...chunkUseCases(knowledge),
-  ...chunkDocs(knowledge),
-];
+const chunks = buildAllChunks(knowledge);
 
 const bySourceType = new Map<string, number>();
 for (const c of chunks) bySourceType.set(c.sourceType, (bySourceType.get(c.sourceType) ?? 0) + 1);

@@ -4,3 +4,5 @@ dist/
 chunks.json
 knowledge.json
 PLAN.md
+corpus/Developer Portal Documentation for v1.md
+corpus/schemas/vdc-schema1.yaml

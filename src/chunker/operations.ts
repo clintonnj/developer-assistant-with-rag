@@ -1,7 +1,7 @@
 import type { Chunk } from "./types.ts";
 import { isUsableDescription, cleanDescription } from "./text.ts";
 
-interface OperationParameter {
+export interface OperationParameter {
   name: string;
   location: string;
   required: boolean;
@@ -9,18 +9,18 @@ interface OperationParameter {
   type: string;
 }
 
-interface SchemaRef {
+export interface SchemaRef {
   name: string;
   reference: string;
 }
 
-interface OperationResponse {
+export interface OperationResponse {
   statusCode: string;
   description?: string;
   schemas?: SchemaRef[];
 }
 
-interface Operation {
+export interface Operation {
   id: string;
   method: string;
   path: string;

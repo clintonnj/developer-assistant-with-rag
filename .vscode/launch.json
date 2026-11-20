@@ -4,6 +4,12 @@
     {
       "type": "node-terminal",
       "request": "launch",
+      "name": "Debug: App (src/main.ts)",
+      "command": "npx tsx src/main.ts"
+    },
+    {
+      "type": "node-terminal",
+      "request": "launch",
       "name": "Debug: preview-operations.ts",
       "command": "npx tsx scripts/preview-operations.ts"
     },

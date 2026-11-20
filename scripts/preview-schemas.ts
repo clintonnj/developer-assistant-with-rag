@@ -1,7 +1,7 @@
-import { readFileSync } from "node:fs";
 import { chunkSchemas } from "../src/chunker/schemas.ts";
+import { loadKnowledge } from "../src/knowledge/load.ts";
 
-const knowledge = JSON.parse(readFileSync(new URL("../knowledge.json", import.meta.url), "utf-8"));
+const knowledge = loadKnowledge();
 const chunks = chunkSchemas(knowledge);
 
 console.log("Total schema chunks:", chunks.length);

@@ -1,7 +1,7 @@
-import { readFileSync } from "node:fs";
 import { chunkOperations } from "../src/chunker/operations.ts";
+import { loadKnowledge } from "../src/knowledge/load.ts";
 
-const knowledge = JSON.parse(readFileSync(new URL("../knowledge.json", import.meta.url), "utf-8"));
+const knowledge = loadKnowledge();
 const chunks = chunkOperations(knowledge);
 
 console.log("Total operation chunks:", chunks.length);

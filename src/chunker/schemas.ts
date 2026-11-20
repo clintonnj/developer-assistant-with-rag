@@ -1,9 +1,9 @@
 import type { Chunk } from "./types.ts";
 import { isUsableDescription, cleanDescription } from "./text.ts";
 
-type JsonSchemaType = "object" | "array" | "string" | "integer" | "number" | "boolean";
+export type JsonSchemaType = "object" | "array" | "string" | "integer" | "number" | "boolean";
 
-interface JsonSchemaNode {
+export interface JsonSchemaNode {
   type?: JsonSchemaType;
   description?: string;
   nullable?: boolean;
@@ -12,12 +12,12 @@ interface JsonSchemaNode {
   items?: JsonSchemaNode;
 }
 
-interface Schema {
+export interface Schema {
   name: string;
   jsonSchema: JsonSchemaNode;
 }
 
-interface Relationship {
+export interface Relationship {
   sourceId: string;
   targetId: string;
   type: "USES_SCHEMA" | "RETURNS_SCHEMA";
@@ -54,14 +54,20 @@ function inlineLabel(type: JsonSchemaType, isRequired: boolean, description?: st
 const MAX_CHARS = 3000;
 const TARGET_CHARS = 1500;
 
-// Pack one node's subtree into one or more groups of SchemaLine. A subtree that fits under
-// the cap becomes a single group (this is the common case for small/medium schemas - often
-// the whole schema is one group). An oversized subtree is split by recursing into its
-// children, then re-merging small sibling subtrees back together up to the target size.
-// Chunk boundaries always land on subtree boundaries, which is what makes a shared path
-// prefix ("Section: ...") meaningful later - a boundary that cut a subtree in half wouldn't
-// have one.
-function packNode(segments: string[], node: JsonSchemaNode, isRequired: boolean, maxChars: number): SchemaLine[][] {
+// A section is a cohesive run of lines that share a real common ancestor - the unit a single
+// "Section: ..." header can describe. A chunk is one or more sections rendered together: most
+// chunks are a single section (a whole subtree, or a split piece of one), but when small
+// sibling subtrees with nothing deeper in common get merged into one chunk (e.g. a schema's
+// "Party" branch and "DataLists" branch, both small, merged to hit the target size), each
+// keeps its own section header instead of being flattened into one group with no shared path.
+type Section = SchemaLine[];
+type SchemaChunk = Section[];
+
+// Pack one node's subtree into one or more chunks. A subtree that fits under the cap becomes
+// a single section/chunk (the common case for small/medium schemas - often the whole schema
+// is one). An oversized subtree is split by recursing into its children, then re-merging small
+// sibling subtrees back together up to the target size, preserving each as its own section.
+function packNode(segments: string[], node: JsonSchemaNode, isRequired: boolean, maxChars: number): SchemaChunk[] {
   if (effectiveType(node) === "array" && node.items) {
     const item = node.items;
     const arraySegments = [...segments.slice(0, -1), `${segments[segments.length - 1]}[]`];
@@ -73,44 +79,87 @@ function packNode(segments: string[], node: JsonSchemaNode, isRequired: boolean,
   return packChildren(segments, ownLine, node, maxChars);
 }
 
-function packChildren(segments: string[], ownLine: SchemaLine, node: JsonSchemaNode, maxChars: number): SchemaLine[][] {
+function packChildren(segments: string[], ownLine: SchemaLine, node: JsonSchemaNode, maxChars: number): SchemaChunk[] {
   if (!node.properties || Object.keys(node.properties).length === 0) {
-    return [[ownLine]];
+    return [[[ownLine]]];
   }
 
   const required = new Set(node.required ?? []);
-  const childGroups = Object.entries(node.properties).flatMap(([key, child]) =>
-    packNode([...segments, key], child, required.has(key), maxChars),
+  const childChunks: SchemaChunk[] = Object.entries(node.properties).flatMap(([key, child]) =>
+    // One known source quirk: a property key in ServiceListRS is literally " Name" with a
+    // leading space.
+    packNode([...segments, key.trim()], child, required.has(key), maxChars),
   );
+  const childSections: Section[] = childChunks.flat();
 
-  const wholeSubtree = [ownLine, ...childGroups.flat()];
-  if (renderGroup(wholeSubtree).text.length <= maxChars) {
-    return [wholeSubtree];
+  // Try the whole subtree as ONE cohesive section first - ownLine plus every descendant line,
+  // flattened - so a node whose children individually needed their own recursive packing step
+  // still collapses back into a single "Section: ..." header when the combined result fits.
+  // Only fall through to section-level merging when that single section would be too big.
+  const wholeSubtreeSection: Section = [ownLine, ...childSections.flat()];
+  if (renderChunk([wholeSubtreeSection]).text.length <= maxChars) {
+    return [[wholeSubtreeSection]];
   }
-  return mergeGroups([[ownLine], ...childGroups], maxChars);
+  return mergeSections([[ownLine], ...childSections], maxChars);
 }
 
-function mergeGroups(groups: SchemaLine[][], maxChars: number): SchemaLine[][] {
-  const merged: SchemaLine[][] = [];
-  let current: SchemaLine[] = [];
+// A section's own shared-prefix depth if it were rendered alone - the yardstick for whether
+// merging it with a neighbor loses specificity (see sectionsShareEnough below).
+function ownPrefixLength(section: Section): number {
+  return section.length === 1 ? section[0].segments.length - 1 : commonPrefixLength(section);
+}
 
-  for (const group of groups) {
+// Two sections are worth combining into one (one header instead of two) only when doing so
+// doesn't shallow the shared path below what either already had alone - e.g. two sibling leaves
+// under the very same parent (SegmentType, SegmentKey under Flight[]) merge for free, since the
+// combined prefix is exactly as deep as each already was. Two unrelated branches (OrderItemID,
+// Price under the same grandparent) would only share the grandparent once merged, which is
+// strictly less specific than either alone - better kept as two separately-headed sections.
+function sectionsShareEnough(a: Section, b: Section): boolean {
+  const mergedPrefixLen = commonPrefixLength([...a, ...b]);
+  // Must not be shallower than EITHER side's own depth. Using the min here (rather than max)
+  // was the earlier bug: it let a trivial schema-root line (own depth always 0) "merge" with
+  // literally anything, since 0 is satisfied by any prefix length - which is exactly how the
+  // Party/DataLists repetition came back after the SegmentType/SegmentKey fix.
+  return mergedPrefixLen >= Math.max(ownPrefixLength(a), ownPrefixLength(b));
+}
+
+// Greedily builds chunks out of sections, operating at section (not whole-child-chunk)
+// granularity: a new section first tries to merge INTO the current chunk's last section
+// (collapsing to one shared header) when that loses no specificity and still fits, otherwise
+// it's appended as its own separate section within the same chunk up to the target size, and
+// only once that's exhausted does a new chunk start.
+function mergeSections(sections: Section[], maxChars: number): SchemaChunk[] {
+  const chunks: SchemaChunk[] = [];
+  let current: SchemaChunk = [];
+
+  for (const section of sections) {
     if (current.length === 0) {
-      current = group;
+      current = [section];
       continue;
     }
-    const candidate = [...current, ...group];
-    const candidateFits = renderGroup(candidate).text.length <= maxChars;
-    const currentBelowTarget = renderGroup(current).text.length < TARGET_CHARS;
-    if (candidateFits && currentBelowTarget) {
-      current = candidate;
+
+    const last = current[current.length - 1];
+    if (sectionsShareEnough(last, section)) {
+      const merged = [...current.slice(0, -1), [...last, ...section]];
+      if (renderChunk(merged).text.length <= maxChars) {
+        current = merged;
+        continue;
+      }
+    }
+
+    const appended = [...current, section];
+    const appendedFits = renderChunk(appended).text.length <= maxChars;
+    const currentBelowTarget = renderChunk(current).text.length < TARGET_CHARS;
+    if (appendedFits && currentBelowTarget) {
+      current = appended;
     } else {
-      merged.push(current);
-      current = group;
+      chunks.push(current);
+      current = [section];
     }
   }
-  if (current.length > 0) merged.push(current);
-  return merged;
+  if (current.length > 0) chunks.push(current);
+  return chunks;
 }
 
 function sharedSegmentCount(a: string[], b: string[]): number {
@@ -119,17 +168,18 @@ function sharedSegmentCount(a: string[], b: string[]): number {
   return i;
 }
 
-// The longest path prefix shared by every line in the group (comparing everyone against the
+// The longest path prefix shared by every line in the section (comparing everyone against the
 // first line is sufficient: a mismatch against any member caps the shared length for the set).
 function commonPrefixLength(lines: SchemaLine[]): number {
   return lines.reduce((min, line) => Math.min(min, sharedSegmentCount(lines[0].segments, line.segments)), lines[0].segments.length);
 }
 
-// Renders a group as "Section: <shared path>" (schema name omitted, that's a separate header)
-// followed by lines relative to that path. When the group's own shallowest line (the subtree's
-// root, always first by construction) IS that shared path, it has nothing left to show relative
-// to itself - fold its type/description into the Section line instead of a blank body line.
-function renderGroup(lines: SchemaLine[]): { text: string; section: string } {
+// Renders one section as "Section: <shared path>" (schema name omitted, that's a separate
+// header) followed by lines relative to that path. When the section's own shallowest line (its
+// subtree's root, always first by construction) IS that shared path, it has nothing left to
+// show relative to itself - fold its type/description into the Section line instead of a blank
+// body line.
+function renderSection(lines: SchemaLine[]): { text: string; section: string } {
   if (lines.length === 1) {
     const only = lines[0];
     const sectionPath = only.segments.slice(1, -1);
@@ -140,9 +190,6 @@ function renderGroup(lines: SchemaLine[]): { text: string; section: string } {
   }
 
   const prefixLen = commonPrefixLength(lines);
-  // The group's shallowest line is always its subtree's own root (prepended by construction).
-  // When its path IS the shared prefix, it has nothing left to show relative to itself - fold
-  // its type/description in rather than emit a body line with a blank name.
   const foldAncestor = lines[0].segments.length === prefixLen;
   const bodyLines = foldAncestor ? lines.slice(1) : lines;
   const ancestorInline = foldAncestor ? inlineLabel(lines[0].type, lines[0].isRequired, lines[0].description) : "";
@@ -157,6 +204,18 @@ function renderGroup(lines: SchemaLine[]): { text: string; section: string } {
     .map((line) => `${line.segments.slice(prefixLen).join(".")} ${inlineLabel(line.type, line.isRequired, line.description)}`)
     .join("\n");
   return { text: header + body, section };
+}
+
+// Renders a chunk's sections back to back. The common single-section case delegates straight
+// to renderSection with no change in behavior. When a chunk has multiple sections (merged
+// siblings with nothing deeper in common), each still gets its own "Section: ..." header
+// instead of falling back to full paths with no header at all.
+function renderChunk(sections: Section[]): { text: string; sectionLabels: string[] } {
+  const rendered = sections.map((lines) => renderSection(lines));
+  return {
+    text: rendered.map((r) => r.text).join("\n\n"),
+    sectionLabels: rendered.map((r) => r.section).filter((section) => section !== ""),
+  };
 }
 
 interface SchemaUsage {
@@ -175,6 +234,16 @@ function buildUsageMap(relationships: Relationship[]): Map<string, SchemaUsage> 
     else entry.returnedByOperations.push(rel.sourceId);
   }
   return usage;
+}
+
+// When a chunk legitimately has several sections (small sibling subtrees merged for size),
+// use one representative path for its title/metadata rather than concatenating every section -
+// the shared prefix across them if there is one, otherwise just the first section's own path.
+function representativeSection(sectionLabels: string[]): string {
+  if (sectionLabels.length <= 1) return sectionLabels[0] ?? "";
+  const segmentLists = sectionLabels.map((label) => label.split(" > "));
+  const shared = segmentLists.reduce((min, segments) => Math.min(min, sharedSegmentCount(segmentLists[0], segments)), segmentLists[0].length);
+  return shared > 0 ? segmentLists[0].slice(0, shared).join(" > ") : segmentLists[0].join(" > ");
 }
 
 function formatUsageHeader(schemaName: string, usage: SchemaUsage | undefined): string {
@@ -201,8 +270,14 @@ export function chunkSchemas(knowledge: KnowledgeWithSchemas): Chunk[] {
     const groups = packNode([schema.name], schema.jsonSchema, false, budget);
 
     groups.forEach((group, index) => {
-      const { text: body, section } = renderGroup(group);
-      const title = section ? `${schema.name}: ${section}` : schema.name;
+      const { text: body, sectionLabels } = renderChunk(group);
+      const section = representativeSection(sectionLabels);
+      // Multiple chunks from the same schema can land on the same (or no) section - e.g. two
+      // split pieces of one oversized subtree, or two merged-sibling chunks under the same
+      // parent. Appending the part number whenever a schema has more than one chunk guarantees
+      // distinct titles without needing to detect which cases would actually collide.
+      const partSuffix = groups.length > 1 ? ` (part ${index + 1}/${groups.length})` : "";
+      const title = `${schema.name}${section ? `: ${section}` : ""}${partSuffix}`;
       chunks.push({
         sourceType: "schema",
         sourceId: groups.length > 1 ? `${schema.name}#part${index + 1}` : schema.name,
