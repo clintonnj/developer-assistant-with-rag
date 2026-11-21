@@ -1,6 +1,5 @@
 import { pool } from "./db.ts";
-import { buildAllChunks } from "./chunker/index.ts";
-import { loadKnowledge } from "./knowledge/load.ts";
+import { chunkAllSources } from "./chunker/index.ts";
 import { embed } from "./embeddings/ollama.ts";
 import type { Chunk } from "./chunker/types.ts";
 
@@ -23,14 +22,13 @@ export interface IngestResult {
 }
 
 /**
- * Rebuilds chunks straight from the OpenAPI schema and the raw documentation text file (see
- * src/knowledge/load.ts) and re-populates the `chunks` table.
+ * Rebuilds chunks straight from every registered source (see src/chunker/index.ts) and
+ * re-populates the `chunks` table.
  * Re-runnable: deletes old rows per source_type (not a full truncate) before inserting,
  * so re-running after editing just one chunker file doesn't wipe unrelated source types.
  */
 export async function runIngest(): Promise<IngestResult> {
-  const knowledge = loadKnowledge();
-  const chunks = buildAllChunks(knowledge);
+  const chunks = await chunkAllSources();
 
   const sourceTypes = [...new Set(chunks.map((chunk) => chunk.sourceType))];
   for (const sourceType of sourceTypes) {

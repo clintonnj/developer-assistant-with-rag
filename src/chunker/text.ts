@@ -9,3 +9,11 @@ export function isUsableDescription(description?: string): description is string
 export function cleanDescription(description: string): string {
   return description.trim().replace(/\s+/g, " ");
 }
+
+export function slugify(text: string): string {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
