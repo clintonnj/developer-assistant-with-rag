@@ -39,7 +39,7 @@ export async function runIngest(): Promise<IngestResult> {
 
   for (const chunk of chunks) {
     bySourceType[chunk.sourceType] = (bySourceType[chunk.sourceType] ?? 0) + 1;
-    const embedding = toVectorLiteral(await embed(chunk.text));
+    const embedding = toVectorLiteral(await embed(chunk.text, "document"));
     await insertChunk(chunk, embedding);
   }
 
