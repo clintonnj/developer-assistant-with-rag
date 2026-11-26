@@ -1,6 +1,6 @@
 import cors from "cors";
 import express from "express";
-import type { AskRequest, AskResponse } from "@dev-assistant/shared-types";
+import type { AskRequest, AskResponse, ChatTurn } from "@dev-assistant/shared-types";
 import { getAgent, type AgentProvider } from "./agents/index.ts";
 import { runIngest } from "./ingest.ts";
 import { retrieveContext } from "./retrieval/index.ts";
@@ -11,6 +11,25 @@ const AGENT_PROVIDERS = ["ollama", "anthropic"] as const;
 
 function isAgentProvider(value: unknown): value is AgentProvider {
   return AGENT_PROVIDERS.some((provider) => provider === value);
+}
+
+// Bounded independently of whatever the client sends - keeps prompt size (and cost) in check on
+// a long-running session regardless of what the frontend's own cap happens to be.
+const MAX_HISTORY_TURNS = 12;
+
+function isChatTurn(value: unknown): value is ChatTurn {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    ((value as ChatTurn).role === "user" || (value as ChatTurn).role === "assistant") &&
+    typeof (value as ChatTurn).text === "string" &&
+    (value as ChatTurn).text.trim() !== ""
+  );
+}
+
+function sanitizeHistory(value: unknown): ChatTurn[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isChatTurn).slice(-MAX_HISTORY_TURNS);
 }
 
 const app = express();
@@ -93,7 +112,7 @@ app.post("/api/init", async (_req, res) => {
 });
 
 app.post("/api/ask", async (req, res) => {
-  const { question, provider = "anthropic" } = (req.body ?? {}) as Partial<AskRequest>;
+  const { question, provider = "anthropic", history } = (req.body ?? {}) as Partial<AskRequest>;
   if (typeof question !== "string" || question.trim() === "") {
     res.status(400).json({ error: "question (non-empty string) is required" });
     return;
@@ -103,10 +122,12 @@ app.post("/api/ask", async (req, res) => {
     return;
   }
 
+  const chatHistory = sanitizeHistory(history);
+
   try {
-    const result = await retrieveContext(question);
+    const result = await retrieveContext(question, chatHistory);
     const prompt = buildAnswerPrompt(result);
-    const answer = await getAgent(provider).sendPrompt(prompt);
+    const answer = await getAgent(provider).sendPrompt(prompt, chatHistory);
     const response: AskResponse = { ...result, answer: answer.text, blocks: answer.blocks, provider };
     res.json(response);
   } catch (err) {

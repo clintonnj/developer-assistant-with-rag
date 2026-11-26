@@ -40,12 +40,25 @@
       "url": "http://localhost:4200",
       "webRoot": "${workspaceFolder}/apps/web",
       "preLaunchTask": "ng serve (web)"
+    },
+    {
+      "type": "pwa-chrome",
+      "request": "launch",
+      "name": "Debug: Web (Chrome, ng serve)",
+      "url": "http://localhost:4200",
+      "webRoot": "${workspaceFolder}/apps/web",
+      "preLaunchTask": "ng serve (web)"
     }
   ],
   "compounds": [
     {
-      "name": "Debug: Full stack (API + Web)",
+      "name": "Debug: Full stack (API + Web, Edge)",
       "configurations": ["Debug: App (src/main.ts)", "Debug: Web (Edge, ng serve)"],
+      "stopAll": true
+    },
+    {
+      "name": "Debug: Full stack (API + Web, Chrome)",
+      "configurations": ["Debug: App (src/main.ts)", "Debug: Web (Chrome, ng serve)"],
       "stopAll": true
     }
   ]

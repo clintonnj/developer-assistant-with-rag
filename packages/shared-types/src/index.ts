@@ -20,9 +20,15 @@ export interface ScoredChunk {
   score: number;
 }
 
+export interface ChatTurn {
+  role: "user" | "assistant";
+  text: string;
+}
+
 export interface AskRequest {
   question: string;
   provider?: AgentProvider;
+  history?: ChatTurn[];
 }
 
 export interface AskResponse {

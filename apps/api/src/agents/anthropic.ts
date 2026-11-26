@@ -1,5 +1,4 @@
-import type { Agent } from "./types.ts";
-import type { AgentAnswer } from "./types.ts";
+import type { Agent, AgentAnswer, ChatTurn } from "./types.ts";
 import { getSchema } from "./tools/getSchema.ts";
 import { answerFromBlocks, resolveBlocks, respondTool, type InputBlock } from "./tools/response.ts";
 
@@ -66,14 +65,17 @@ async function executeTool(name: string, input: unknown): Promise<string> {
 }
 
 export class AnthropicAgent implements Agent {
-  async sendPrompt(prompt: string): Promise<AgentAnswer> {
+  async sendPrompt(prompt: string, history: ChatTurn[] = []): Promise<AgentAnswer> {
     try {
       const endpoint = process.env.ANTHROPIC_ENDPOINT;
       if (!endpoint) {
         throw new Error("ANTHROPIC_ENDPOINT is not set");
       }
 
-      const messages: AnthropicMessage[] = [{ role: "user", content: prompt }];
+      const messages: AnthropicMessage[] = [
+        ...history.map((turn): AnthropicMessage => ({ role: turn.role, content: turn.text })),
+        { role: "user", content: prompt },
+      ];
 
       for (let toolRound = 0; toolRound <= MAX_TOOL_ROUNDS; toolRound++) {
         const response = await fetch(`${endpoint}/v1/messages`, {

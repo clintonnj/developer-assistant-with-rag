@@ -1,10 +1,14 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from "@angular/core";
 import { FormsModule } from "@angular/forms";
-import type { AgentProvider } from "@dev-assistant/shared-types";
+import type { AgentProvider, ChatTurn } from "@dev-assistant/shared-types";
 
 import { AnswerBlockComponent } from "./answer-block/answer-block";
 import type { ChatMessage } from "./chat-message.model";
 import { ChatService } from "./chat.service";
+
+// Trimmed client-side too (the server also caps this) so the request body doesn't keep growing
+// unbounded over a long session.
+const MAX_HISTORY_TURNS = 12;
 
 @Component({
   selector: "app-chat",
@@ -28,6 +32,7 @@ export class Chat {
     }
 
     const provider = this.provider();
+    const history = this.buildHistory();
     const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", text: question };
     const pendingMessage: ChatMessage = {
       id: crypto.randomUUID(),
@@ -40,7 +45,7 @@ export class Chat {
     this.question.set("");
     this.loading.set(true);
 
-    this.chatService.ask({ question, provider }).subscribe({
+    this.chatService.ask({ question, provider, history }).subscribe({
       next: (response) => {
         this.replaceMessage(pendingMessage.id, {
           ...pendingMessage,
@@ -65,5 +70,12 @@ export class Chat {
 
   private replaceMessage(id: string, next: ChatMessage): void {
     this.messages.update((messages) => messages.map((message) => (message.id === id ? next : message)));
+  }
+
+  private buildHistory(): ChatTurn[] {
+    return this.messages()
+      .filter((message) => !message.pending && !message.error)
+      .map((message): ChatTurn => ({ role: message.role, text: message.text }))
+      .slice(-MAX_HISTORY_TURNS);
   }
 }

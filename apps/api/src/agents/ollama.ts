@@ -1,5 +1,5 @@
 import { Agent as UndiciAgent } from "undici";
-import type { Agent, AgentAnswer } from "./types.ts";
+import type { Agent, AgentAnswer, ChatTurn } from "./types.ts";
 import { getSchema } from "./tools/getSchema.ts";
 import { answerFromBlocks, resolveBlocks, respondTool, type InputBlock } from "./tools/response.ts";
 
@@ -54,7 +54,7 @@ function parseToolArguments(argumentsJson: unknown): Record<string, unknown> {
 }
 
 export class OllamaAgent implements Agent {
-  async sendPrompt(_prompt: string): Promise<AgentAnswer> {
+  async sendPrompt(_prompt: string, history: ChatTurn[] = []): Promise<AgentAnswer> {
     try {
     const endpoint = process.env.OLLAMA_AI_ENDPOINT;
     if (!endpoint) {
@@ -62,6 +62,7 @@ export class OllamaAgent implements Agent {
     }
 
     const messages: Array<{ role: "system" | "user" | "assistant" | "tool"; content: string }> = [
+      ...history.map((turn) => ({ role: turn.role, content: turn.text })),
       { role: "user", content: _prompt },
     ];
 
