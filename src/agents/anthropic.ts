@@ -1,5 +1,7 @@
 import type { Agent } from "./types.ts";
+import type { AgentAnswer } from "./types.ts";
 import { getSchema } from "./tools/getSchema.ts";
+import { answerFromBlocks, resolveBlocks, respondTool, type InputBlock } from "./tools/response.ts";
 
 const MAX_TOOL_ROUNDS = 5;
 
@@ -19,6 +21,7 @@ const TOOLS = [
       additionalProperties: false,
     },
   },
+  respondTool,
 ] as const;
 
 interface AnthropicContentBlock {
@@ -63,7 +66,7 @@ async function executeTool(name: string, input: unknown): Promise<string> {
 }
 
 export class AnthropicAgent implements Agent {
-  async sendPrompt(prompt: string): Promise<string> {
+  async sendPrompt(prompt: string): Promise<AgentAnswer> {
     try {
       const endpoint = process.env.ANTHROPIC_ENDPOINT;
       if (!endpoint) {
@@ -109,10 +112,11 @@ export class AnthropicAgent implements Agent {
         }
 
         if (data.stop_reason !== "tool_use") {
-          return data.content
+          const text = data.content
             .filter((item) => item.type === "text")
             .map((item) => item.text ?? "")
             .join("\n");
+          return { text, blocks: text ? [{ type: "text", markdown: text }] : [] };
         }
 
         if (toolRound === MAX_TOOL_ROUNDS) {
@@ -125,18 +129,38 @@ export class AnthropicAgent implements Agent {
         }
 
         messages.push({ role: "assistant", content: data.content });
-        const toolResults: ToolResultBlock[] = await Promise.all(
-          toolCalls.map(async (item) => {
+        const toolResults: ToolResultBlock[] = [];
+        for (const item of toolCalls) {
             if (!item.id || !item.name) {
               throw new Error("Anthropic returned a tool call without an id or name");
             }
-            return {
-              type: "tool_result",
-              tool_use_id: item.id,
-              content: await executeTool(item.name, item.input),
-            };
-          }),
-        );
+            if (item.name === "respond") {
+              const input =
+                typeof item.input === "object" && item.input !== null && "blocks" in item.input
+                  ? item.input.blocks
+                  : undefined;
+              if (!Array.isArray(input)) {
+                throw new Error("respond requires an ordered blocks array");
+              }
+              const resolved = await resolveBlocks(input as InputBlock[]);
+              if (resolved.errors.length && toolRound < MAX_TOOL_ROUNDS) {
+                toolResults.push({
+                  type: "tool_result",
+                  tool_use_id: item.id,
+                  is_error: true,
+                  content: "Fix these and call respond again:\n" + resolved.errors.join("\n"),
+                });
+              } else {
+                return answerFromBlocks(resolved.blocks);
+              }
+            } else {
+              toolResults.push({
+                type: "tool_result",
+                tool_use_id: item.id,
+                content: await executeTool(item.name, item.input),
+              });
+            }
+        }
         messages.push({ role: "user", content: toolResults });
       }
 
