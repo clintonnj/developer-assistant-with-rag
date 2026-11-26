@@ -1,0 +1,60 @@
+<div class="chat">
+  <header class="chat__header">
+    <h1>Developer Assistant</h1>
+    <label class="chat__provider">
+      Model
+      <select [ngModel]="provider()" (ngModelChange)="provider.set($event)">
+        <option value="anthropic">Anthropic</option>
+        <option value="ollama">Ollama</option>
+      </select>
+    </label>
+  </header>
+
+  <div class="chat__messages">
+    @for (message of messages(); track message.id) {
+      <div class="message" [class.message--user]="message.role === 'user'" [class.message--assistant]="message.role === 'assistant'">
+        <span class="message__role">{{ message.role === "user" ? "You" : "Assistant" }}</span>
+        <div class="message__bubble">
+          @if (message.pending) {
+            <span class="message__pending">Thinking…</span>
+          } @else if (message.error) {
+            <span class="message__error">{{ message.error }}</span>
+          } @else if (message.blocks?.length) {
+            @for (block of message.blocks; track $index) {
+              <app-answer-block [block]="block" />
+            }
+          } @else {
+            <app-answer-block [block]="{ type: 'text', markdown: message.text }" />
+          }
+
+          @if (message.sources?.length) {
+            <details class="message__sources">
+              <summary>{{ message.sources!.length }} source(s)</summary>
+              <ul>
+                @for (source of message.sources; track source.id) {
+                  <li>{{ source.title || source.sourceId }}</li>
+                }
+              </ul>
+            </details>
+          }
+        </div>
+      </div>
+    } @empty {
+      <p class="chat__empty">Ask a question about the API to get started.</p>
+    }
+  </div>
+
+  <form class="chat__composer" (ngSubmit)="ask()">
+    <textarea
+      [ngModel]="question()"
+      (ngModelChange)="question.set($event)"
+      name="question"
+      rows="2"
+      placeholder="Ask about an operation, schema, or flow…"
+      (keydown.enter)="$event.preventDefault(); ask()"
+    ></textarea>
+    <button type="submit" [disabled]="loading() || !question().trim()">
+      {{ loading() ? "Asking…" : "Ask" }}
+    </button>
+  </form>
+</div>

@@ -1,4 +1,6 @@
+import cors from "cors";
 import express from "express";
+import type { AskRequest, AskResponse } from "@dev-assistant/shared-types";
 import { getAgent, type AgentProvider } from "./agents/index.ts";
 import { runIngest } from "./ingest.ts";
 import { retrieveContext } from "./retrieval/index.ts";
@@ -12,6 +14,7 @@ function isAgentProvider(value: unknown): value is AgentProvider {
 }
 
 const app = express();
+app.use(cors());
 app.use(express.json());
 
 export function buildAnswerPrompt({ question, chunks }: RetrievalResult): string {
@@ -90,7 +93,7 @@ app.post("/api/init", async (_req, res) => {
 });
 
 app.post("/api/ask", async (req, res) => {
-  const { question, provider = "anthropic" } = req.body ?? {};
+  const { question, provider = "anthropic" } = (req.body ?? {}) as Partial<AskRequest>;
   if (typeof question !== "string" || question.trim() === "") {
     res.status(400).json({ error: "question (non-empty string) is required" });
     return;
@@ -104,7 +107,8 @@ app.post("/api/ask", async (req, res) => {
     const result = await retrieveContext(question);
     const prompt = buildAnswerPrompt(result);
     const answer = await getAgent(provider).sendPrompt(prompt);
-    res.json({ ...result, answer: answer.text, blocks: answer.blocks, provider });
+    const response: AskResponse = { ...result, answer: answer.text, blocks: answer.blocks, provider };
+    res.json(response);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Question answering failed" });

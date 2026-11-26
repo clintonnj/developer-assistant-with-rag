@@ -1,3 +1,5 @@
+import type { ScoredChunk } from "@dev-assistant/shared-types";
+
 export interface ChunkRow {
   id: number;
   sourceType: string;
@@ -7,9 +9,7 @@ export interface ChunkRow {
   metadata: Record<string, unknown>;
 }
 
-export interface ScoredChunk extends ChunkRow {
-  score: number;
-}
+export type { ScoredChunk };
 
 export interface RetrievalResult {
   question: string;

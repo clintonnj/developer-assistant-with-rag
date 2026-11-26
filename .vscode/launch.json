@@ -5,25 +5,48 @@
       "type": "node-terminal",
       "request": "launch",
       "name": "Debug: App (src/main.ts)",
-      "command": "npx tsx src/main.ts"
+      "command": "npx tsx src/main.ts",
+      "cwd": "${workspaceFolder}/apps/api",
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
     },
     {
       "type": "node-terminal",
       "request": "launch",
       "name": "Debug: preview-operations.ts",
-      "command": "npx tsx scripts/preview-operations.ts"
+      "command": "npx tsx scripts/preview-operations.ts",
+      "cwd": "${workspaceFolder}/apps/api",
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
     },
     {
       "type": "node-terminal",
       "request": "launch",
       "name": "Debug: preview-schemas.ts",
-      "command": "npx tsx scripts/preview-schemas.ts"
+      "command": "npx tsx scripts/preview-schemas.ts",
+      "cwd": "${workspaceFolder}/apps/api",
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
     },
     {
       "type": "node-terminal",
       "request": "launch",
       "name": "Debug Current File (tsx)",
-      "command": "npx tsx ${relativeFile}"
+      "command": "npx tsx ${relativeFile}",
+      "cwd": "${workspaceFolder}/apps/api",
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
+    },
+    {
+      "type": "pwa-msedge",
+      "request": "launch",
+      "name": "Debug: Web (Edge, ng serve)",
+      "url": "http://localhost:4200",
+      "webRoot": "${workspaceFolder}/apps/web",
+      "preLaunchTask": "ng serve (web)"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Debug: Full stack (API + Web)",
+      "configurations": ["Debug: App (src/main.ts)", "Debug: Web (Edge, ng serve)"],
+      "stopAll": true
     }
   ]
 }

@@ -1,0 +1,24 @@
+@if (block(); as b) {
+  @if (b.type === "text") {
+    <div class="markdown-body" [innerHTML]="html()"></div>
+  } @else if (b.type === "code") {
+    <div class="code-block">
+      <div class="code-block__header">
+        <span class="code-block__title">{{ b.title }}</span>
+        @if (b.validation) {
+          <span class="code-block__badge" [class.code-block__badge--invalid]="!b.validation.valid">
+            {{ b.validation.valid ? "valid" : "invalid" }}
+          </span>
+        }
+      </div>
+      <pre class="hljs"><code [innerHTML]="highlightedCode()"></code></pre>
+      @if (b.validation && !b.validation.valid) {
+        <ul class="code-block__errors">
+          @for (err of b.validation.errors ?? []; track $index) {
+            <li>{{ err | json }}</li>
+          }
+        </ul>
+      }
+    </div>
+  }
+}
