@@ -39,6 +39,12 @@ interface AnthropicMessage {
 interface AnthropicMessageResponse {
   stop_reason: string | null;
   content: AnthropicContentBlock[];
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+  };
 }
 
 interface ToolResultBlock {
@@ -67,6 +73,9 @@ async function executeTool(name: string, input: unknown): Promise<string> {
 export class AnthropicAgent implements Agent {
   async sendPrompt(prompt: string, history: ChatTurn[] = []): Promise<AgentAnswer> {
     try {
+      let inputTokens = 0;
+      let outputTokens = 0;
+      let hasUsage = false;
       const endpoint = process.env.ANTHROPIC_ENDPOINT;
       if (!endpoint) {
         throw new Error("ANTHROPIC_ENDPOINT is not set");
@@ -108,6 +117,14 @@ export class AnthropicAgent implements Agent {
         }
 
         const data = (await response.json()) as AnthropicMessageResponse;
+        if (data.usage) {
+          inputTokens +=
+            (data.usage.input_tokens ?? 0) +
+            (data.usage.cache_creation_input_tokens ?? 0) +
+            (data.usage.cache_read_input_tokens ?? 0);
+          outputTokens += data.usage.output_tokens ?? 0;
+          hasUsage = true;
+        }
 
         if (data.stop_reason === "max_tokens") {
           console.warn("Anthropic response was truncated (stop_reason: max_tokens) - consider raising max_tokens.");
@@ -118,7 +135,11 @@ export class AnthropicAgent implements Agent {
             .filter((item) => item.type === "text")
             .map((item) => item.text ?? "")
             .join("\n");
-          return { text, blocks: text ? [{ type: "text", markdown: text }] : [] };
+          return {
+            text,
+            blocks: text ? [{ type: "text", markdown: text }] : [],
+            ...(hasUsage && { usage: { inputTokens, outputTokens } }),
+          };
         }
 
         if (toolRound === MAX_TOOL_ROUNDS) {
@@ -153,7 +174,10 @@ export class AnthropicAgent implements Agent {
                   content: "Fix these and call respond again:\n" + resolved.errors.join("\n"),
                 });
               } else {
-                return answerFromBlocks(resolved.blocks);
+                return {
+                  ...answerFromBlocks(resolved.blocks),
+                  ...(hasUsage && { usage: { inputTokens, outputTokens } }),
+                };
               }
             } else {
               toolResults.push({

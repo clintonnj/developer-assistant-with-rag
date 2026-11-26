@@ -128,7 +128,13 @@ app.post("/api/ask", async (req, res) => {
     const result = await retrieveContext(question, chatHistory);
     const prompt = buildAnswerPrompt(result);
     const answer = await getAgent(provider).sendPrompt(prompt, chatHistory);
-    const response: AskResponse = { ...result, answer: answer.text, blocks: answer.blocks, provider };
+    const response: AskResponse = {
+      ...result,
+      answer: answer.text,
+      blocks: answer.blocks,
+      provider,
+      ...(answer.usage && { usage: answer.usage }),
+    };
     res.json(response);
   } catch (err) {
     console.error(err);

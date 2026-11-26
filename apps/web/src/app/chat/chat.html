@@ -10,6 +10,22 @@
     </label>
   </header>
 
+  <section class="chat__usage" aria-label="Model usage">
+    <div class="chat__usage-heading">
+      <strong>Latest request</strong>
+      @if (lastUsage(); as usage) {
+        <span>{{ lastUsageProvider() }} · {{ usage.inputTokens | number }} input / {{ usage.outputTokens | number }} output tokens</span>
+      } @else {
+        <span>Token usage is unavailable until a response is received.</span>
+      }
+    </div>
+    <label class="chat__history">
+      <span>Chat history sent: {{ historyMessagesSent() }} / 12 messages</span>
+      <progress max="12" [value]="historyMessagesSent()"> {{ historyMessagesSent() }} / 12 </progress>
+    </label>
+    <p>Older chat messages are omitted after 12. Retrieved documents are also included; this is not a model context-window meter.</p>
+  </section>
+
   <div class="chat__messages">
     @for (message of messages(); track message.id) {
       <div class="message" [class.message--user]="message.role === 'user'" [class.message--assistant]="message.role === 'assistant'">

@@ -25,6 +25,11 @@ export interface ChatTurn {
   text: string;
 }
 
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface AskRequest {
   question: string;
   provider?: AgentProvider;
@@ -37,6 +42,7 @@ export interface AskResponse {
   answer: string;
   blocks: AnswerBlock[];
   provider: AgentProvider;
+  usage?: TokenUsage;
 }
 
 export interface ApiErrorResponse {

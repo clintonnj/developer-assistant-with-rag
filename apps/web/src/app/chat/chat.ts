@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from "@angular/core";
 import { FormsModule } from "@angular/forms";
-import type { AgentProvider, ChatTurn } from "@dev-assistant/shared-types";
+import { DecimalPipe } from "@angular/common";
+import type { AgentProvider, AskResponse, ChatTurn } from "@dev-assistant/shared-types";
 
 import { AnswerBlockComponent } from "./answer-block/answer-block";
 import type { ChatMessage } from "./chat-message.model";
@@ -12,7 +13,7 @@ const MAX_HISTORY_TURNS = 12;
 
 @Component({
   selector: "app-chat",
-  imports: [FormsModule, AnswerBlockComponent],
+  imports: [DecimalPipe, FormsModule, AnswerBlockComponent],
   templateUrl: "./chat.html",
   styleUrl: "./chat.css",
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -24,6 +25,9 @@ export class Chat {
   readonly question = signal("");
   readonly provider = signal<AgentProvider>("anthropic");
   readonly loading = signal(false);
+  readonly historyMessagesSent = signal(0);
+  readonly lastUsage = signal<AskResponse["usage"] | undefined>(undefined);
+  readonly lastUsageProvider = signal<AgentProvider | undefined>(undefined);
 
   ask(): void {
     const question = this.question().trim();
@@ -33,6 +37,7 @@ export class Chat {
 
     const provider = this.provider();
     const history = this.buildHistory();
+    this.historyMessagesSent.set(history.length);
     const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", text: question };
     const pendingMessage: ChatMessage = {
       id: crypto.randomUUID(),
@@ -43,6 +48,8 @@ export class Chat {
 
     this.messages.update((messages) => [...messages, userMessage, pendingMessage]);
     this.question.set("");
+    this.lastUsage.set(undefined);
+    this.lastUsageProvider.set(undefined);
     this.loading.set(true);
 
     this.chatService.ask({ question, provider, history }).subscribe({
@@ -55,6 +62,8 @@ export class Chat {
           provider: response.provider,
           pending: false,
         });
+        this.lastUsage.set(response.usage);
+        this.lastUsageProvider.set(provider);
         this.loading.set(false);
       },
       error: (err) => {

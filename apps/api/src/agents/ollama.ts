@@ -56,6 +56,9 @@ function parseToolArguments(argumentsJson: unknown): Record<string, unknown> {
 export class OllamaAgent implements Agent {
   async sendPrompt(_prompt: string, history: ChatTurn[] = []): Promise<AgentAnswer> {
     try {
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let hasUsage = false;
     const endpoint = process.env.OLLAMA_AI_ENDPOINT;
     if (!endpoint) {
       throw new Error("OLLAMA_AI_ENDPOINT is not set");
@@ -98,6 +101,16 @@ export class OllamaAgent implements Agent {
     }
 
     const data = await response.json();
+    if (
+      typeof data.prompt_eval_count === "number" &&
+      Number.isFinite(data.prompt_eval_count) &&
+      typeof data.eval_count === "number" &&
+      Number.isFinite(data.eval_count)
+    ) {
+      inputTokens += data.prompt_eval_count;
+      outputTokens += data.eval_count;
+      hasUsage = true;
+    }
 
     if (data.done_reason === "length") {
       console.warn("Ollama response was truncated (done_reason: length) - consider raising num_predict.");
@@ -114,13 +127,22 @@ export class OllamaAgent implements Agent {
           const parsed = JSON.parse(text) as { blocks?: InputBlock[] };
           if (Array.isArray(parsed.blocks)) {
             const resolved = await resolveBlocks(parsed.blocks);
-            if (!resolved.errors.length) return answerFromBlocks(resolved.blocks);
+            if (!resolved.errors.length) {
+              return {
+                ...answerFromBlocks(resolved.blocks),
+                ...(hasUsage && { usage: { inputTokens, outputTokens } }),
+              };
+            }
           }
         } catch {
           // Fall through to a plain text block.
         }
       }
-      return { text, blocks: text ? [{ type: "text", markdown: text }] : [] };
+      return {
+        text,
+        blocks: text ? [{ type: "text", markdown: text }] : [],
+        ...(hasUsage && { usage: { inputTokens, outputTokens } }),
+      };
     }
 
     if (toolRound === MAX_TOOL_ROUNDS) {
